@@ -245,75 +245,6 @@ for i in range(len(relevant_lines_list)):
     relevant_lines_list[i] = re.sub(r'\bT\s', 'T', relevant_lines_list[i])
 
 Regions = ['Africa', 'Caribbean', 'Pacific']
-region_list = []
-country_list = []
-grant_list = []
-
-current_region = None
-current_country = None
-current_grant = None
-
-# Iterate through lines
-for line in relevant_lines_list:
-    # Check if the line is a region
-    if line in Regions:
-        current_region = line
-        current_country = None
-    # Check if the line is a country
-    elif line in all_commonwealth_countries:
-        current_country = line
-    # Check if the line starts with '• Grant of'
-    elif line.startswith('• Grant of'):
-        # Append data to lists
-        region_list.append(current_region)
-        country_list.append(current_country)
-        grant_list.append(current_grant)  # Append the previous '• Grant of' line
-
-        # Reset current_grant for the new '• Grant of' line
-        current_grant = line
-    else:
-        # If the line doesn't match any condition, merge with the previous '• Grant of' line
-        current_grant += ' ' + line if current_grant is not None else line
-
-# Create a DataFrame
-df_pdf = pd.DataFrame({'Region': region_list, 'Country': country_list, 'Grant': grant_list})
-
-# Display the DataFrame
-print(df_pdf)
-
-
-region_list = []
-country_list = []
-grant_list = []
-
-current_region = None
-current_country = None
-current_grant = None
-
-# Iterate through lines
-for line in relevant_lines_list:
-    # Check if the line is a region
-    if line in Regions:
-        current_region = line
-        current_country = None
-    # Check if the line is a country
-    elif line in all_commonwealth_countries:
-        current_country = line
-    # Check if the line starts with '• Grant of'
-    elif line.startswith('• Grant of'):
-        # Reset current_grant for the new '• Grant of' line
-        current_grant = line
-        # Append data to lists
-# Append the previous '• Grant of' line
-    else:
-        # If the line doesn't match any condition, merge with the previous '• Grant of' line
-        current_grant += ' ' + line if current_grant is not None else line
-        region_list.append(current_region)
-        country_list.append(current_country)
-        grant_list.append(current_grant)  
-
-# Create a DataFrame
-df_pdf2 = pd.DataFrame({'Region': region_list, 'Country': country_list, 'Grant': grant_list})
 
 
 region_list = []
@@ -337,7 +268,7 @@ while i < len(relevant_lines_list):
         current_country = line
         i += 1
     # Check if the line starts with '• Grant of'
-    elif line.startswith('• Grant of'):
+    elif line.startswith(('• Grant of', '• Technical assistance grant of', '• Complimentary finance of')):
         # Reset current_grant for the new '• Grant of' line
         current_grant = line
         i += 1
@@ -345,17 +276,22 @@ while i < len(relevant_lines_list):
         current_grant += ' ' + line if current_grant is not None else line
         i += 1
 
-    if i < len(relevant_lines_list) and relevant_lines_list[i].startswith('• Grant of'):
+    # Check if the next line starts with any of the specified prefixes
+    next_line_starts_with_prefix = i < len(relevant_lines_list) and relevant_lines_list[i].startswith(
+        ('• Grant of', '• Technical assistance grant of', '• Complimentary finance of')
+    )
+    
+    if next_line_starts_with_prefix:
         region_list.append(current_region)
         country_list.append(current_country)
         grant_list.append(current_grant)
         current_grant = None  # Reset current_grant
     elif i == len(relevant_lines_list):
-        # Append the last entry if it ends with '• Grant of'
+        # Append the last entry if it ends with any of the specified prefixes
         region_list.append(current_region)
         country_list.append(current_country)
         grant_list.append(current_grant)
-
+        
 # Create a DataFrame
 df_pdf3 = pd.DataFrame({'Region': region_list, 'Country': country_list, 'Grant': grant_list})
 
@@ -369,7 +305,7 @@ df_pdf3 = df_pdf3.drop(df_pdf3.index[-1])
 
 # Reset the index
 df_pdf3 = df_pdf3.reset_index(drop=True)
-df_pdf3['Grant'] = df_pdf3['Grant'].str.replace('• Grant of \$', '')
+df_pdf3['Grant'] = df_pdf3['Grant'].str.replace(r'^.*?\$', '', regex=True)
 
 
 df_pdf3['Grant_Amount'] = ""
@@ -381,10 +317,13 @@ for index, row in df_pdf3.iterrows():
     # Check if 'million' is present in the grant value
     if 'million' in grant_value:
         parts = grant_value.split('million', 1)
-        df_pdf3.at[index, 'Grant_Amount'] = parts[0].strip() 
+        df_pdf3.at[index, 'Grant_Amount'] = float(parts[0].strip()) * 1e6
         df_pdf3.at[index, 'Grant_Info'] =   parts[1].strip()
     else:
-        Grant_Amount = ''.join(c for c in grant_value if c.isdigit() or c == '.')
-        Grant_Info = grant_value[len(Grant_Amount):].strip()
-        df_pdf3.at[index, 'Grant_Amount'] = Grant_Amount
-        df_pdf3.at[index, 'Grant_Info'] = Grant_Info
+        match = re.match(r'([0-9,.]+)\s*(.*)', grant_value)
+        if match:
+            df_pdf3.at[index, 'Grant_Amount'] = float(match.group(1).replace(',', ''))
+            df_pdf3.at[index, 'Grant_Info'] = match.group(2).strip()
+
+# Convert 'Grant_Amount' column to numeric, coercing errors to NaN
+df_pdf3['Grant_Amount'] = pd.to_numeric(df_pdf3['Grant_Amount'], errors='coerce')
