@@ -123,14 +123,15 @@ country_name_to_code = {country: cc.convert(names=country, to='ISO3') for countr
 # Download data from the World Bank API for all available time periods
 dataframes = []
 for country_name, country_code in country_name_to_code.items():
-    data = wbdata.get_dataframe(indicators={indicator: 'GDP_ppp'}, country=country_code, convert_date=False)
+    data = wbdata.get_dataframe(indicators={indicator: 'GDP_ppp'}, country=country_code)
     data['Country'] = country_name  # Add a 'Country' column for easy identification
+    data.reset_index(inplace=True) 
     dataframes.append(data)
 
 # Concatenate the dataframes into a single dataframe
 GDP = pd.concat(dataframes)
 
-
+#OECD API process
 api_url = "https://sdmx.oecd.org/public/rest/data/OECD.ENV.EPI,DSD_CAPMF@DF_CAPMF,1.0/MLT+IND+ZAF+GBR+NZL+CAN+AUS.A.POL_COUNT+POL_STRINGENCY.LEV3_GHG_ACC+LEV3_UNFCCC+LEV3_EVAL_BR+LEV3_BAN_FF_ABROAD+LEV3_BAN_CREDIT+LEV2_INT_GHGREP+LEV2_INT_C_FIN+LEV2_INT_C_COORD+LEV2_CROSS_SEC_CG+LEV2_CROSS_SEC_FFPP+LEV2_CROSS_SEC_RDD+LEV2_CROSS_SEC_GHGTAR+LEV2_SEC_T_NMBI+LEV2_SEC_T_MBI+LEV2_SEC_B_NMBI+LEV2_SEC_B_MBI+LEV2_SEC_I_NMBI+LEV2_SEC_I_MBI+LEV2_SEC_E_NMBI+LEV2_SEC_E_MBI+LEV1_INT+LEV1_CROSS_SEC+LEV1_SEC.0_TO_10+PL?startPeriod=1990&endPeriod=2022&dimensionAtObservation=AllDimensions"
 response = requests.get(api_url)
 
@@ -327,3 +328,118 @@ for index, row in df_pdf3.iterrows():
 
 # Convert 'Grant_Amount' column to numeric, coercing errors to NaN
 df_pdf3['Grant_Amount'] = pd.to_numeric(df_pdf3['Grant_Amount'], errors='coerce')
+
+######## pdf parsing over
+OECD['TIME_PERIOD'] = OECD['TIME_PERIOD'].astype(str)
+
+# Convert 'ObsValue' column to numeric
+OECD['ObsValue'] = pd.to_numeric(OECD['ObsValue'], errors='coerce')
+
+# Get unique values in the 'CLIM_ACT_POL' column
+unique_clim_act_pol = OECD['CLIM_ACT_POL'].unique()
+
+# Set a seaborn color palette for better differentiation
+sns.set_palette("husl")
+
+# Loop through unique values in 'CLIM_ACT_POL'
+for clim_act_pol_value in unique_clim_act_pol:
+    # Filter the DataFrame based on the current 'CLIM_ACT_POL' value and MEASURE == 'POL_STRINGENCY'
+    filtered_df = OECD[(OECD['CLIM_ACT_POL'] == clim_act_pol_value) & (OECD['MEASURE'] == 'POL_STRINGENCY')]
+    
+    # Check if there are any rows to plot
+    if not filtered_df.empty:
+        # Plotting individual ObsValue for each country over time
+        plt.figure(figsize=(12, 8))
+        
+        # Loop through unique country codes and plot their respective ObsValues
+        for country_code in filtered_df['REF_AREA'].unique():
+            country_data = filtered_df[filtered_df['REF_AREA'] == country_code]
+            plt.plot(country_data['TIME_PERIOD'], country_data['ObsValue'], label=country_code, marker='o', linestyle='-')
+        
+        # Add labels and title
+        plt.xlabel('Year')
+        plt.ylabel('Score')
+        plt.title(f'Individual Score of Countries on International Climate Finance over Time - {clim_act_pol_value}')
+        
+        # Show only a subset of years on the x-axis (adjust the step as needed)
+        plt.xticks(filtered_df['TIME_PERIOD'].unique()[::2], rotation=45, ha='right')
+        
+        # Improve legend placement
+        plt.legend(loc='upper left', bbox_to_anchor=(1, 1), title='Country Code')
+        
+        # Add grid for better readability
+        plt.grid(True, linestyle='--', alpha=0.7)
+        
+        # Save the plot to the specified base path with a filename based on 'CLIM_ACT_POL' value
+        filename = f'{clim_act_pol_value.replace(" ", "_")}_plot.png'
+        filepath = os.path.join(base_path, filename)
+        plt.savefig(filepath)
+        
+        # Show the plot for the current 'CLIM_ACT_POL' value
+        plt.tight_layout()  # Adjust layout to prevent clipping of labels
+        plt.show()
+    else:
+        print(f"No data found for {clim_act_pol_value} and MEASURE == 'POL_STRINGENCY'. Skipping plot.")
+
+
+def process_OECD_data(OECD):
+    """
+    Process OECD data with the following steps:
+    1. Rename the first column to 'Year' and the second column to 'countrycode'.
+    2. Remove the 3rd column.
+    3. Limit the 4th column to 'POL_STRINGENCY'.
+    4. Remove the 6th column.
+    5. Rename the 7th column to 'Score'.
+
+    Parameters:
+    - OECD (pd.DataFrame): Input DataFrame containing OECD data.
+
+    Returns:
+    - pd.DataFrame: Processed DataFrame.
+    """
+    # Rename the first and second columns
+    OECD.rename(columns={'TIME_PERIOD': 'Year', 'REF_AREA': 'countrycode'}, inplace=True)
+
+    # Remove the 3rd column
+    OECD.drop(columns=['FREQ'], inplace=True)
+
+    # Limit the 4th column to 'POL_STRINGENCY'
+    OECD = OECD[OECD['MEASURE'] == 'POL_STRINGENCY']
+
+    # Remove the 6th column
+    OECD.drop(columns=['UNIT_MEASURE'], inplace=True)
+
+    # Rename the 7th column to 'Score'
+    OECD.rename(columns={'ObsValue': 'Score'}, inplace=True)
+
+    return OECD
+
+processed_OECD = process_OECD_data(OECD)
+processed_OECD.drop(columns=['MEASURE'], inplace=True)
+
+wide_OECD = processed_OECD.pivot(index=['Year', 'countrycode'], columns='CLIM_ACT_POL', values='Score').reset_index()
+IND_ZAF_OECD = wide_OECD[wide_OECD['countrycode'].isin(['IND', 'ZAF'])]
+IND_ZAF_ODI = ODI_cw[ODI_cw['countrycode'].isin(['IND', 'ZAF'])]
+IND_ZAF_GDP = GDP[GDP['countrycode'].isin(['IND', 'ZAF'])]
+
+print(IND_ZAF_ODI.columns)
+
+subset_columns = ['Approved year', 'countrycode']
+IND_ZAF_ODI_grouped = IND_ZAF_ODI.groupby(subset_columns).agg({'Amount of Funding Approved (USD millions)': 'sum'}).reset_index()
+IND_ZAF_ODI_grouped.rename(columns={'Approved year': 'Year', 'Amount of Funding Approved (USD millions)': 'Funding'}, inplace=True)
+print(IND_ZAF_GDP.columns)
+IND_ZAF_GDP.rename(columns={'date': 'Year'}, inplace=True)
+
+IND_ZAF_ODI_grouped['Year'] = pd.to_numeric(IND_ZAF_ODI_grouped['Year'], errors='coerce')
+
+# Convert 'Year' column to numeric in 'IND_ZAF_OECD'
+IND_ZAF_OECD['Year'] = pd.to_numeric(IND_ZAF_OECD['Year'], errors='coerce')
+
+# Convert 'Year' column to numeric in 'IND_ZAF_GPD'
+IND_ZAF_GDP['Year'] = pd.to_numeric(IND_ZAF_GDP['Year'], errors='coerce')
+
+merge_1 = pd.merge(IND_ZAF_ODI_grouped, IND_ZAF_OECD, on=['countrycode', 'Year'], how='inner')
+final_merged_df = pd.merge(merge_1, IND_ZAF_GDP, on=['countrycode', 'Year'], how='inner')
+print(final_merged_df.columns)
+
+
