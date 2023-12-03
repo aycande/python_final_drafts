@@ -23,6 +23,10 @@ import xml.etree.ElementTree as ET
 import pycountry
 from pypdf import PdfReader
 import re
+import statsmodels.api as sm
+from linearmodels.panel import PanelOLS
+
+
 
 
 
@@ -429,7 +433,6 @@ IND_ZAF_ODI_grouped = IND_ZAF_ODI.groupby(subset_columns).agg({'Amount of Fundin
 IND_ZAF_ODI_grouped.rename(columns={'Approved year': 'Year', 'Amount of Funding Approved (USD millions)': 'Funding'}, inplace=True)
 print(IND_ZAF_GDP.columns)
 IND_ZAF_GDP.rename(columns={'date': 'Year'}, inplace=True)
-
 IND_ZAF_ODI_grouped['Year'] = pd.to_numeric(IND_ZAF_ODI_grouped['Year'], errors='coerce')
 
 # Convert 'Year' column to numeric in 'IND_ZAF_OECD'
@@ -442,4 +445,84 @@ merge_1 = pd.merge(IND_ZAF_ODI_grouped, IND_ZAF_OECD, on=['countrycode', 'Year']
 final_merged_df = pd.merge(merge_1, IND_ZAF_GDP, on=['countrycode', 'Year'], how='inner')
 print(final_merged_df.columns)
 
+#basic analysis, how does funding impact the emission outcome?
+final_merged_df_dummy = pd.get_dummies(final_merged_df, columns=['countrycode', 'Year'], drop_first=True)
+y = final_merged_df_dummy['LEV1_CROSS_SEC']
+X = final_merged_df_dummy[['Funding'] + [col for col in final_merged_df_dummy.columns if col.startswith('countrycode') or col.startswith('Year')]]
+X = sm.add_constant(X)
+model = sm.OLS(y, X)
+results = model.fit()
+print(results.summary())
 
+final_merged_df.reset_index(inplace=True)
+mod = PanelOLS.from_formula('LEV1_CROSS_SEC ~ Funding + GDP_ppp + EntityEffects + TimeEffects', final_merged_df.set_index(['countrycode', 'Year']))
+res = mod.fit(cov_type='clustered', cluster_entity=True)
+print(res)
+
+mod = PanelOLS.from_formula('Funding ~ GDP_ppp + EntityEffects + TimeEffects', final_merged_df.set_index(['countrycode', 'Year']))
+res = mod.fit(cov_type='clustered', cluster_entity=True)
+print(res)
+
+
+#loading the cvsv about the emissions from climate watch
+
+def load_csv_data(base_path, file_name):
+    '''
+    This function loads and prepares the csv file.
+    Arguments: base_path (str)
+               file_name (str) 
+    Returns the df.           
+    '''
+    full_path = os.path.join(base_path, file_name)
+    df = pd.read_csv(full_path)
+    return df
+
+emissions = load_csv_data(base_path, 'ghg-emissions_percapita.csv')
+print(emissions.columns)
+
+def process_emissions_data(df):
+    """
+    Process emissions data with the following steps:
+    1. Rename the first column to 'Year' and the second column to 'countrycode'.
+    2. Remove the 3rd column.
+    3. Limit the 4th column to 'POL_STRINGENCY'.
+    4. Remove the 6th column.
+    5. Rename the 7th column to 'Score'.
+
+    Returns:
+    - pd.DataFrame: Processed DataFrame.
+    """
+    # Rename the first and second columns
+    df.rename(columns={'iso': 'countrycode'}, inplace=True)
+    # Remove the 3rd column
+    df.drop(columns=['Country/Region'], inplace=True)
+    df.drop(columns=['unit'], inplace=True)
+    return df
+
+processed_emissions = process_emissions_data(emissions)
+processed_emissions_long = pd.melt(processed_emissions, id_vars='countrycode', var_name='Year', value_name='Emissions')
+processed_emissions_long.reset_index(inplace=True)
+subset_columns = ['Approved year', 'countrycode']
+ODI_cw_grouped = ODI_cw.groupby(subset_columns).agg({'Amount of Funding Approved (USD millions)': 'sum'}).reset_index()
+ODI_cw_grouped.rename(columns={'Approved year': 'Year', 'Amount of Funding Approved (USD millions)': 'Funding'}, inplace=True)
+GDP.rename(columns={'date': 'Year'}, inplace=True)
+cw_merge_1 = pd.merge(processed_emissions_long, GDP, on=['countrycode', 'Year'], how='inner')
+ODI_cw_grouped['Year'] = pd.to_numeric(ODI_cw_grouped['Year'], errors='coerce')
+cw_merge_1['Year'] = pd.to_numeric(cw_merge_1['Year'], errors='coerce')
+cw_merge_2 = pd.merge(cw_merge_1, ODI_cw_grouped, on=['countrycode', 'Year'], how='inner')
+cw_merge_2.drop(columns=['index', 'Country'], inplace=True)
+cw_merge_2.columns
+cw_merge_2['Emissions'] = pd.to_numeric(cw_merge_2['Emissions'], errors='coerce')
+wide_OECD['Year'] = pd.to_numeric(wide_OECD['Year'], errors='coerce')
+
+mod = PanelOLS.from_formula('Emissions ~ GDP_ppp + EntityEffects + TimeEffects', cw_merge_2.set_index(['countrycode', 'Year']))
+res = mod.fit(cov_type='clustered', cluster_entity=True)
+print(res)
+
+cw_merge_2_dummy = pd.get_dummies(cw_merge_2, columns=['countrycode', 'Year'], drop_first=True)
+m = PanelOLS(dependent=cw_merge_2_dummy['Emissions'],
+             exog=cw_merge_2_dummy['Funding'],
+             entity_effects=True,
+             time_effects=True)
+results = m.fit(cov_type='clustered', cluster_entity=True)
+print(results)
