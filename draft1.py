@@ -251,7 +251,6 @@ for i in range(len(relevant_lines_list)):
 
 Regions = ['Africa', 'Caribbean', 'Pacific']
 
-
 region_list = []
 country_list = []
 grant_list = []
@@ -332,7 +331,7 @@ for index, row in df_pdf3.iterrows():
 
 # Convert 'Grant_Amount' column to numeric, coercing errors to NaN
 df_pdf3['Grant_Amount'] = pd.to_numeric(df_pdf3['Grant_Amount'], errors='coerce')
-
+df_pdf3.columns
 ######## pdf parsing over
 OECD['TIME_PERIOD'] = OECD['TIME_PERIOD'].astype(str)
 
@@ -422,6 +421,7 @@ processed_OECD = process_OECD_data(OECD)
 processed_OECD.drop(columns=['MEASURE'], inplace=True)
 
 wide_OECD = processed_OECD.pivot(index=['Year', 'countrycode'], columns='CLIM_ACT_POL', values='Score').reset_index()
+wide_OECD.columns
 IND_ZAF_OECD = wide_OECD[wide_OECD['countrycode'].isin(['IND', 'ZAF'])]
 IND_ZAF_ODI = ODI_cw[ODI_cw['countrycode'].isin(['IND', 'ZAF'])]
 IND_ZAF_GDP = GDP[GDP['countrycode'].isin(['IND', 'ZAF'])]
@@ -453,6 +453,8 @@ X = sm.add_constant(X)
 model = sm.OLS(y, X)
 results = model.fit()
 print(results.summary())
+
+#asagidaki basarili gayet
 
 final_merged_df.reset_index(inplace=True)
 mod = PanelOLS.from_formula('LEV1_CROSS_SEC ~ Funding + GDP_ppp + EntityEffects + TimeEffects', final_merged_df.set_index(['countrycode', 'Year']))
@@ -493,15 +495,19 @@ def process_emissions_data(df):
     - pd.DataFrame: Processed DataFrame.
     """
     # Rename the first and second columns
-    df.rename(columns={'iso': 'countrycode'}, inplace=True)
+    df1 = df.copy()
+    df1.rename(columns={'iso': 'countrycode'}, inplace=True)
     # Remove the 3rd column
-    df.drop(columns=['Country/Region'], inplace=True)
-    df.drop(columns=['unit'], inplace=True)
-    return df
+    df1.drop(columns=['Country/Region'], inplace=True)
+    df1.drop(columns=['unit'], inplace=True)
+    return df1
 
 processed_emissions = process_emissions_data(emissions)
 processed_emissions_long = pd.melt(processed_emissions, id_vars='countrycode', var_name='Year', value_name='Emissions')
 processed_emissions_long.reset_index(inplace=True)
+emissions.columns
+processed_emissions.columns
+processed_emissions_long.columns
 subset_columns = ['Approved year', 'countrycode']
 ODI_cw_grouped = ODI_cw.groupby(subset_columns).agg({'Amount of Funding Approved (USD millions)': 'sum'}).reset_index()
 ODI_cw_grouped.rename(columns={'Approved year': 'Year', 'Amount of Funding Approved (USD millions)': 'Funding'}, inplace=True)
@@ -515,14 +521,45 @@ cw_merge_2.columns
 cw_merge_2['Emissions'] = pd.to_numeric(cw_merge_2['Emissions'], errors='coerce')
 wide_OECD['Year'] = pd.to_numeric(wide_OECD['Year'], errors='coerce')
 
-mod = PanelOLS.from_formula('Emissions ~ GDP_ppp + EntityEffects + TimeEffects', cw_merge_2.set_index(['countrycode', 'Year']))
+mod = PanelOLS.from_formula('GDP_ppp ~ Emissions +  EntityEffects + TimeEffects', cw_merge_2.set_index(['countrycode', 'Year']))
 res = mod.fit(cov_type='clustered', cluster_entity=True)
 print(res)
 
-cw_merge_2_dummy = pd.get_dummies(cw_merge_2, columns=['countrycode', 'Year'], drop_first=True)
-m = PanelOLS(dependent=cw_merge_2_dummy['Emissions'],
-             exog=cw_merge_2_dummy['Funding'],
-             entity_effects=True,
-             time_effects=True)
-results = m.fit(cov_type='clustered', cluster_entity=True)
-print(results)
+#new datasets
+
+carbon = load_csv_data(base_path, 'full_year_emissions_summary_table_1850_2023.csv')
+UK_ICF = load_andprep_excel_data(base_path, 'UK_ICF.xlsx')
+carbon_cw = carbon[carbon['country'].isin(all_commonwealth_countries)]
+
+carbon.columns
+
+
+column_mapping = {i: str(2011 + i - 9) for i in range(9, 21)}
+UK_ICF.rename(columns=column_mapping, inplace=True)
+
+
+column_mapping = {
+    '2011/12 ICF spend £000': 2011,
+    '2012/13 ICF spend £000': 2012,
+    '2013/14 ICF spend £000': 2013,
+    '2014/15 ICF spend £000': 2014,
+    '2015/16 ICF spend £000': 2015,
+    '2016/17 ICF spend £000': 2016,
+    '2017/2018 ICF spend £000': 2017,
+    '2018/2019 ICF spend £000': 2018,
+    '2019/2020 ICF spend £000': 2019,
+    '2020/2021 ICF spend £000': 2020,
+    '2021/2022 ICF spend £000': 2021,
+    '2022/2023 ICF spend £000': 2022
+}
+UK_ICF.rename(columns=column_mapping, inplace=True)
+
+UK_ICF.columns
+columns_to_stay = ['Project title','Country/region','Description']  # Replace Column1, Column2, ... with the actual column names
+UK_ICF_long = pd.melt(UK_ICF, id_vars= columns_to_stay, var_name='Year', value_name='Funding')
+UK_ICF_long = UK_ICF_long.dropna(subset=['Funding'])
+UK_ICF_long['Country/region'].unique()
+
+country_uk_distribution = UK_ICF_long['Country/region'].value_counts().reset_index()
+print(country_uk_distribution)
+
