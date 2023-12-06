@@ -5,7 +5,6 @@ Created on Mon Dec  4 22:50:37 2023
 
 @author: denizaycan
 """
-
 import os
 import json
 import csv
@@ -468,6 +467,8 @@ plot_merge = merge_and_plot_data(processed_ODI_pledges, processed_colonial_for_p
 plt.figure(figsize=(10, 6))
 sns.scatterplot(x= 'Colonial Total/GtCO2', y='Pledged (USD million current)', data=plot_merge, hue='Country', palette='viridis')
 plt.title('Cross-Country Scatter Plot')
+plt.xscale('log')  # Use log scale for x-axis for better visualization
+plt.yscale('log')
 plt.xlabel('Colonial Total/GtCO2')
 plt.ylabel('Pledged (USD million current)')
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
@@ -483,6 +484,8 @@ for i, row in filtered_data.iterrows():
 plt.title('Cross-Country Scatter Plot')
 plt.xlabel('Colonial consumption per yearly capita /tCO2/pc')
 plt.ylabel('Pledge per Capita (2023)')
+plt.xscale('log')  # Use log scale for x-axis for better visualization
+plt.yscale('log')
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 plt.tight_layout()
 plot_path = os.path.join(base_path, 'pledge_emission.png')
@@ -632,6 +635,56 @@ panel2 = pd.merge(panel1, processed_colonial_emissions, on=['countrycode', 'Year
 wide_OECD['Year'] = pd.to_numeric(wide_OECD['Year'], errors='coerce')
 panel3 = pd.merge(panel2, wide_OECD, on=['countrycode', 'Year'], how='left')
 
-excel_file_path = os.path.join(base_path, 'OECD.xlsx')
-OECD.to_excel(excel_file_path, index=False)
+panel3.columns
+
+OECD_excel_file_path = os.path.join(base_path, 'OECD.xlsx')
+OECD.to_excel(OECD_excel_file_path, index=False)
+PANEL_excel_file_path = os.path.join(base_path, 'panel3.xlsx')
+panel3.to_excel(PANEL_excel_file_path, index=False)
+
+def plot_variables(data, x_variable, y_variable, year, countries):
+    filtered_data = data[(data['Year'] == year) & (data['Country'].isin(countries))]
+
+    plt.figure(figsize=(12, 8))
+    sns.scatterplot(data=filtered_data, x=x_variable, y=y_variable, hue='Country', palette='Set1', s=150, edgecolor='w', linewidth=0.5)
+    
+    plt.title(f'{y_variable} vs {x_variable} ({year})', fontsize=16)
+    plt.xlabel(x_variable, fontsize=14)
+    plt.ylabel(y_variable, fontsize=14)
+
+    plt.xscale('log')
+    plt.yscale('log')
+
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+    
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', title='Country', fontsize=12)
+    
+    # Add a nice background color
+    plt.gca().set_facecolor('#f8f9fa')
+
+    # Customize tick label fonts
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
+
+    # Add a legend title
+    legend = plt.legend(title='Country', fontsize=10)
+    legend.get_title().set_fontsize(12)
+
+    # Add a border around the legend
+    legend.get_frame().set_linewidth(1)
+    legend.get_frame().set_edgecolor('black')
+
+    # Remove spines
+    sns.despine()
+
+    plt.show()
+
+
+# Example usage:
+x_variable = 'GDP_ppp'
+y_variable = 'Emissions'
+year = 2020
+selected_countries = ['Tanzania', 'South Africa', 'United Kingdom', 'India']
+
+plot_variables(panel3, x_variable, y_variable, year, selected_countries)
 
