@@ -374,9 +374,9 @@ for clim_act_pol_value in unique_clim_act_pol:
         plt.grid(True, linestyle='--', alpha=0.7)
         
         # Save the plot to the specified base path with a filename based on 'CLIM_ACT_POL' value
-        filename = f'{clim_act_pol_value.replace(" ", "_")}_plot.png'
-        filepath = os.path.join(base_path, filename)
-        plt.savefig(filepath)
+#        filename = f'{clim_act_pol_value.replace(" ", "_")}_plot.png'
+#       filepath = os.path.join(base_path, filename)
+#        plt.savefig(filepath)
         
         # Show the plot for the current 'CLIM_ACT_POL' value
         plt.tight_layout()  # Adjust layout to prevent clipping of labels
@@ -385,7 +385,7 @@ for clim_act_pol_value in unique_clim_act_pol:
         print(f"No data found for {clim_act_pol_value} and MEASURE == 'POL_STRINGENCY'. Skipping plot.")
 
 
-def process_OECD_data(OECD):
+def process_OECD_data(df):
     """
     Process OECD data with the following steps:
     1. Rename the first column to 'Year' and the second column to 'countrycode'.
@@ -401,21 +401,23 @@ def process_OECD_data(OECD):
     - pd.DataFrame: Processed DataFrame.
     """
     # Rename the first and second columns
-    OECD.rename(columns={'TIME_PERIOD': 'Year', 'REF_AREA': 'countrycode'}, inplace=True)
+    df1 = df.copy()
+    df1.rename(columns={'TIME_PERIOD': 'Year', 'REF_AREA': 'countrycode'}, inplace=True)
 
     # Remove the 3rd column
-    OECD.drop(columns=['FREQ'], inplace=True)
+    df1.drop(columns=['FREQ'], inplace=True)
 
     # Limit the 4th column to 'POL_STRINGENCY'
-    OECD = OECD[OECD['MEASURE'] == 'POL_STRINGENCY']
+    df1 = df1[df1['MEASURE'] == 'POL_STRINGENCY']
+    df1 = df1.drop(columns=['MEASURE'], inplace=True)
 
     # Remove the 6th column
-    OECD.drop(columns=['UNIT_MEASURE'], inplace=True)
+    df1.drop(columns=['UNIT_MEASURE'], inplace=True)
 
     # Rename the 7th column to 'Score'
-    OECD.rename(columns={'ObsValue': 'Score'}, inplace=True)
+    df1.rename(columns={'ObsValue': 'Score'}, inplace=True)
 
-    return OECD
+    return df1
 
 processed_OECD = process_OECD_data(OECD)
 processed_OECD.drop(columns=['MEASURE'], inplace=True)
@@ -555,11 +557,49 @@ column_mapping = {
 UK_ICF.rename(columns=column_mapping, inplace=True)
 
 UK_ICF.columns
-columns_to_stay = ['Project title','Country/region','Description']  # Replace Column1, Column2, ... with the actual column names
+columns_to_stay = ['Project title','Country/region','Description']  
 UK_ICF_long = pd.melt(UK_ICF, id_vars= columns_to_stay, var_name='Year', value_name='Funding')
 UK_ICF_long = UK_ICF_long.dropna(subset=['Funding'])
 UK_ICF_long['Country/region'].unique()
 
 country_uk_distribution = UK_ICF_long['Country/region'].value_counts().reset_index()
 print(country_uk_distribution)
+
+#----
+
+
+def plot_oecd_variable_over_time(oecd_df, variable_column='CLIM_ACT_POL', country_code=None, clim_act_pol_codes=None, measure_value='POL_STRINGENCY'):
+    oecd_1 = oecd_df.copy()
+    oecd_1['TIME_PERIOD'] = oecd_1['TIME_PERIOD'].astype(str)
+    oecd_1['ObsValue'] = pd.to_numeric(oecd_1['ObsValue'], errors='coerce')
+
+    sns.set_palette("husl")
+
+    # If clim_act_pol_codes is not provided, use all unique codes in the 'CLIM_ACT_POL' column
+    clim_act_pol_codes = clim_act_pol_codes or oecd_1['CLIM_ACT_POL'].unique()
+
+    for value in clim_act_pol_codes:
+        filtered_df = oecd_1[(oecd_1[variable_column] == value) & (oecd_1['MEASURE'] == measure_value)]
+        filtered_df = filtered_df[filtered_df['REF_AREA'] == country_code] if country_code else filtered_df
+
+        if not filtered_df.empty:
+            plt.figure(figsize=(12, 8))
+
+            for code in filtered_df['REF_AREA'].unique():
+                country_data = filtered_df[filtered_df['REF_AREA'] == code]
+                plt.plot(country_data['TIME_PERIOD'], country_data['ObsValue'], label=code, marker='o', linestyle='-')
+
+            plt.xlabel('Year')
+            plt.ylabel('Score')
+            plt.title(f'Individual Score of Countries on International Climate Finance over Time - {value}')
+            plt.xticks(filtered_df['TIME_PERIOD'].unique()[::2], rotation=45, ha='right')
+            plt.legend(loc='upper left', bbox_to_anchor=(1, 1), title='Country Code')
+            plt.grid(True, linestyle='--', alpha=0.7)
+            plt.tight_layout()
+            plt.show()
+        else:
+            print(f"No data found for {value}, MEASURE == '{measure_value}', and Country Code == '{country_code}'. Skipping plot.")
+            
+plot_oecd_variable_over_time(OECD, variable_column='CLIM_ACT_POL', country_code= 'CAN', clim_act_pol_codes=['LEV2_SEC_T_MBI', 'LEV2_INT_C_FIN'])
+
 
